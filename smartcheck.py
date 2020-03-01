@@ -11,23 +11,23 @@ Smartcheck: smart spellcheck in pure Python.
   - Save + pickle the trained 3-gram, language, error models
 """
 
-from nltk import trigrams, word_tokenize
+from nltk import bigrams, word_tokenize
 from collections import Counter, defaultdict
 import re
 
 class Smartcheck:
     """A smart spell checker.
 
-    Uses an 3-gram language model.
+    Uses a bigram language model.
     """
 
     def __init__(self, corpus):
         """Initializes language model with trigram probabilities."""
         self.corpus = corpus
-        self.trigrams = defaultdict(lambda: defaultdict(lambda: 0))
+        self.bigrams = defaultdict(lambda: defaultdict(lambda: 0))
         self.model = {} 
         self.pop_model()
-        self.pop_trigrams()
+        self.pop_bigrams()
 
     def sentences(self, text):
         """All sentences in a given text."""
@@ -44,17 +44,17 @@ class Smartcheck:
         for word in word_counts:
             self.model[word] = word_counts[word] / N
         
-    def pop_trigrams(self):
-        """Populate self.trigrams with probabilities of next words"""
+    def pop_bigrams(self):
+        """Populate self.bigrams with probabilities of next words"""
         for sentence in self.sentences(self.corpus):
-            for w1, w2, w3 in trigrams(word_tokenize(sentence), pad_right=True, pad_left=True):
-                self.trigrams[(w1, w2)][w3] += 1
+            for w1, w2 in bigrams(word_tokenize(sentence), pad_right=True, pad_left=True):
+                self.bigrams[w1][w2] += 1
 
         # Convert trigrams to probabilities
-        for wp in self.trigrams:
-            total_count = float(sum(self.trigrams[wp].values()))
-            for w3 in self.trigrams[wp]:
-                self.trigrams[wp][w3] /= total_count
+        for wp in self.bigrams:
+            total_count = float(sum(self.bigrams[wp].values()))
+            for w2 in self.bigrams[wp]:
+                self.bigrams[wp][w2] /= total_count
 
     def predict(self, sentence):
         """Predict the next words given the sentence."""
@@ -62,15 +62,19 @@ class Smartcheck:
         options = dict(self.trigrams[tuple(prev_two_words)])
         return options
 
-    def word_probability(self, word):
+    def word_probability(self, word, prev):
         """Probability of a given word."""
-        if word in self.model:
-            return self.model[word]
-        return 0
+        p_c = self.model[word]
+        p_cw = self.bigrams[prev][word]
+        return p_c * p_cw
 
-    def correction(self, word):
+    def correction(self, word, prev):
         """Return the most probable correction."""
-        return max(self.candidates(word), key=self.word_probability)
+        # Case 1: word is in model
+        if word in self.model:
+            return word
+        # Case 2: word is unknown
+        return max(self.candidates(word), key=lambda w: self.word_probability(w, prev))
 
     def candidates(self, word):
         """Candidate list of possible correct words."""
@@ -99,4 +103,4 @@ class Smartcheck:
 if __name__ == "__main__":
     sentence = "This is a test sentence. This is another. This is a. Okay? Okay! Fine then."
     sc = Smartcheck(sentence)
-    print(sc.correction("sentnce"))
+    print(sc.correction("sentnce", "test"))
