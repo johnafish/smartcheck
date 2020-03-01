@@ -21,13 +21,28 @@ class Smartcheck:
     Uses a bigram language model.
     """
 
-    def __init__(self, corpus):
+    def __init__(
+            self, 
+            dict_file = "dictionary.txt",
+            model_file = "count_1w.txt", 
+            bigram_file = "count_2w.txt"
+    ):
         """Initializes language model with trigram probabilities."""
-        self.corpus = corpus
+        self.dict_file = dict_file
+        self.model_file = model_file
+        self.bigram_file = bigram_file
         self.bigrams = defaultdict(lambda: defaultdict(lambda: 0))
         self.model = {} 
         self.pop_model()
         self.pop_bigrams()
+
+    def process_file(self, filename):
+        content = {}
+        with open(filename, "r") as f:
+            for line in f.readlines():
+                key, val = line.split("\t")
+                content[key.lower()] = int(val)
+        return content
 
     def sentences(self, text):
         """All sentences in a given text."""
@@ -39,12 +54,21 @@ class Smartcheck:
 
     def pop_model(self):
         """Populate model with probability of word."""
-        word_counts = Counter(self.words(self.corpus))
+        dict_words = set([line.strip().lower() for line in open(self.dict_file, "r").readlines()])
+        word_counts = self.process_file(self.model_file) 
         N = sum(word_counts.values())
         for word in word_counts:
-            self.model[word] = word_counts[word] / N
-        
+            if word in dict_words:
+                self.model[word] = word_counts[word] / N
+
     def pop_bigrams(self):
+        """Populate self.bigrams with probs of next words using Norvig"""
+        bigram_counts = self.process_file(self.bigram_file)
+        N = sum(bigram_counts.values())
+        for bigram in bigram_counts:
+            self.bigrams[bigram.lower()] = bigram_counts[bigram] / N
+        
+    def pop_bigrams_old(self):
         """Populate self.bigrams with probabilities of next words"""
         for sentence in self.sentences(self.corpus):
             for w1, w2 in bigrams(word_tokenize(sentence), pad_right=True, pad_left=True):
@@ -64,9 +88,12 @@ class Smartcheck:
 
     def word_probability(self, word, prev):
         """Probability of a given word."""
-        p_c = self.model[word]
-        p_cw = self.bigrams[prev][word]
-        return p_c * p_cw
+        bg = "{} {}".format(prev, word)
+        p_c = self.model[word] if word in self.model else 1e-10 
+        p_cw = self.bigrams[bg] if bg in self.bigrams else 1e-10 
+        p = p_c * p_cw if prev else p_c
+        print(word, p_c, p_cw)
+        return p
 
     def correction(self, word, prev):
         """Return the most probable correction."""
@@ -79,7 +106,7 @@ class Smartcheck:
     def candidates(self, word):
         """Candidate list of possible correct words."""
         return (self.known([word]) or \
-                self.known(self.edits1(word)) or \
+                self.known(self.edits1(word)) | \
                 self.known(self.edits2(word)) or \
                 set([word]))
 
@@ -100,7 +127,30 @@ class Smartcheck:
         "All edits that are two edits away from `word`."
         return (e2 for e1 in self.edits1(word) for e2 in self.edits1(e1))
 
+def test(test_file):
+    sc = Smartcheck()
+    correct = 0
+    incorrect = 0
+    with open(test_file, "r") as f:
+        for line in f.readlines():
+            wrong, real = line.split("\t")[:2]
+            predict = sc.correction(wrong, "")
+            if predict.strip() == real.strip():
+                correct += 1
+            else:
+                incorrect += 1
+                print(wrong, real, predict)
+            print("Success rate:")
+            print(correct / (correct + incorrect))
+    print("Success rate:")
+    print(correct / (correct + incorrect))
+
+
 if __name__ == "__main__":
-    sentence = "This is a test sentence. This is another. This is a. Okay? Okay! Fine then."
-    sc = Smartcheck(sentence)
-    print(sc.correction("sentnce", "test"))
+    # test("test2.txt")
+    sc = Smartcheck()
+    while 1:
+        prev, word = input("").split()[:2]
+        print(sc.correction(word, prev))
+
+ 
